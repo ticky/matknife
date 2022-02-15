@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use image::{GenericImage, GenericImageView, ImageBuffer, Pixel};
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -30,7 +30,10 @@ fn split(options: Split) -> Result<()> {
         bail!("Input image does not have an alpha channel!");
     }
 
-    let file_stem = options.file.file_stem().unwrap();
+    let file_stem = options
+        .file
+        .file_stem()
+        .expect("Could not determine file name");
 
     let (width, height) = image.dimensions();
     let mut alpha_image: ImageBuffer<image::Luma<u8>, Vec<_>> = ImageBuffer::new(width, height);
@@ -132,7 +135,10 @@ fn merge(options: Merge) -> Result<()> {
         }
     }
 
-    let file_stem = options.metallic_file.file_stem().unwrap();
+    let file_stem = options
+        .metallic_file
+        .file_stem()
+        .expect("Could not determine file name");
 
     let mut filename: String = file_stem.to_string_lossy().to_string();
 
