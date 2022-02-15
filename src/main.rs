@@ -1,14 +1,14 @@
 #[macro_use]
 extern crate log;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use image::{GenericImage, GenericImageView, ImageBuffer, Pixel};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 /// Split a Unity-style combined metallic and smoothness texture image
-/// into Pixar USDZ-style separate images for metallic and roughness.
+/// into Pixar USD-style separate images for metallic and roughness.
 struct Split {
     /// The texture file to split
     ///
@@ -22,21 +22,15 @@ struct Split {
 fn split(options: Split) -> Result<()> {
     debug!("{:?}", options);
 
-    let file_stem = options.file.file_stem().unwrap();
-
-    let mut filename: String = file_stem.to_string_lossy().to_string();
-
-    if let Some(basename) = filename.strip_suffix("MetallicSmoothness") {
-        filename = basename.to_string();
-    }
-
-    debug!("filename: {:?}", filename);
+    println!("Splitting {:?} into two files...", options.file);
 
     let mut image = image::open(options.file.clone())?;
 
     if !image.color().has_alpha() {
-        panic!("Input image does not have an alpha channel!");
+        bail!("Input image does not have an alpha channel!");
     }
+
+    let file_stem = options.file.file_stem().unwrap();
 
     let (width, height) = image.dimensions();
     let mut alpha_image: ImageBuffer<image::Luma<u8>, Vec<_>> = ImageBuffer::new(width, height);
@@ -58,26 +52,33 @@ fn split(options: Split) -> Result<()> {
         }
     }
 
+    let mut filename: String = file_stem.to_string_lossy().to_string();
+
+    if let Some(basename) = filename.strip_suffix("MetallicSmoothness") {
+        filename = basename.to_string();
+    }
+
+    debug!("filename: {:?}", filename);
+
     let metallic_path = options
         .file
         .with_file_name(format!("{}{}", filename, "Metallic.png"));
-    let smoothness_path = options
+
+    println!("Writing metallic texture to: {:?}", metallic_path);
+    image.save(metallic_path)?;
+
+    let roughness_path = options
         .file
         .with_file_name(format!("{}{}", filename, "Roughness.png"));
 
-    debug!(
-        "metallic_path: {:?}, smoothness_path: {:?}",
-        metallic_path, smoothness_path
-    );
-
-    image.save(metallic_path)?;
-    alpha_image.save(smoothness_path)?;
+    println!("Writing roughness texture to: {:?}", roughness_path);
+    alpha_image.save(roughness_path)?;
 
     Ok(())
 }
 
 #[derive(Debug, StructOpt)]
-/// Merge Pixar USDZ-style separate images for metallic and roughness
+/// Merge Pixar USD-style separate images for metallic and roughness
 /// into a Unity-style combined metallic and smoothness texture image.
 struct Merge {
     /// The metallic file
@@ -98,21 +99,16 @@ struct Merge {
 fn merge(options: Merge) -> Result<()> {
     debug!("{:?}", options);
 
-    let file_stem = options.metallic_file.file_stem().unwrap();
-
-    let mut filename: String = file_stem.to_string_lossy().to_string();
-
-    if let Some(basename) = filename.strip_suffix("Metallic") {
-        filename = basename.to_string();
-    }
-
-    debug!("filename: {:?}", filename);
-
     let mut metallic_image = image::open(options.metallic_file.clone())?;
-    let roughness_image = image::open(options.roughness_file)?;
+    let roughness_image = image::open(options.roughness_file.clone())?;
+
+    println!(
+        "Merging {:?} and {:?} into one file...",
+        options.metallic_file, options.roughness_file
+    );
 
     if metallic_image.dimensions() != roughness_image.dimensions() {
-        panic!("Input images are not the same size!");
+        bail!("Input images are not the same size!");
     }
 
     let (width, height) = metallic_image.dimensions();
@@ -136,20 +132,30 @@ fn merge(options: Merge) -> Result<()> {
         }
     }
 
+    let file_stem = options.metallic_file.file_stem().unwrap();
+
+    let mut filename: String = file_stem.to_string_lossy().to_string();
+
+    if let Some(basename) = filename.strip_suffix("Metallic") {
+        filename = basename.to_string();
+    }
+
+    debug!("filename: {:?}", filename);
+
     let merged_path = options
         .metallic_file
         .with_file_name(format!("{}{}", filename, "MetallicSmoothness.png"));
 
-    debug!(
-        "merged_path: {:?}",
-        merged_path
-    );
+    println!("Writing metallic+smoothness file to: {:?}", merged_path);
 
     metallic_image.save(merged_path)?;
 
     Ok(())
 }
 
+/// Convert physically-based rendering textures between Unity-style combined
+/// metallic and smoothness file and Pixar USD-style separate metallic and
+/// roughness files
 #[derive(Debug, StructOpt)]
 enum Args {
     Split(Split),
